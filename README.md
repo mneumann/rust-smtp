@@ -31,3 +31,11 @@ beginning on fully platform independent and not tied to a specific range of plat
 
 [RFC5321]: http://tools.ietf.org/html/rfc5321
 [opensmtpd]: http://www.opensmtpd.org/
+
+## License
+ 
+rust-smtp is under the BSD license, see [LICENSE][license] for details.
+
+[license]: LICENSE
+
+Copyright (c) 2014 by Michael Neumann <mneumann@ntecs.de>.
