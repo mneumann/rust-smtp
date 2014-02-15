@@ -1,6 +1,6 @@
 #[warn(unused_must_use)];
 
-use std::io::IoResult;
+use std::io::{IoResult,IoError,InvalidInput};
 use std::io::net::ip::SocketAddr;
 use std::io::net::tcp::{TcpListener,TcpStream};
 use std::io::{Listener,Acceptor,Writer};
@@ -14,14 +14,28 @@ fn read_ascii(io: &mut BufferedStream<TcpStream>) -> char {
     }
 }
 
-fn read_line(io: &mut BufferedStream<TcpStream>) -> ~str {
-    match io.read_line() {
-        Ok(mut line) => {
-            assert!(line.pop_char() == '\n');
-            assert!(line.pop_char() == '\r');
-            line
+fn invalid_input(desc: &'static str) -> IoError {
+    IoError {kind: InvalidInput, desc: desc, detail: None}
+}
+
+// RFC 5321 Section 2.3.8. Lines
+static CR: u8 = 0x0D;
+static LF: u8 = 0x0A;
+fn read_line(io: &mut BufferedStream<TcpStream>) -> IoResult<~str> {
+    let mut s = ~"";
+
+    loop {
+        match if_ok!(io.read_byte()) {
+            CR   => { break }
+            LF   => { return Err(invalid_input("CR expected before LF")) }
+            byte => { s.push_char(byte as char); }
         }
-        _ => fail!("Invalid line")
+    }
+
+    if if_ok!(io.read_byte()) == LF {
+        Ok(s)
+    } else {
+        Err(invalid_input("LF expected after CR"))
     }
 }
 
@@ -47,19 +61,19 @@ enum Command {
 fn read_command(io: &mut BufferedStream<TcpStream>) -> Command {
     match read_ascii(io) {
         'H' => {
-            if read_expect(io, bytes!("ELO ")) { HELO(read_line(io)) }
+            if read_expect(io, bytes!("ELO ")) { HELO(read_line(io).unwrap()) }
             else { Invalid }
         }
         'E' => {
-            if read_expect(io, bytes!("HLO ")) { EHLO(read_line(io)) }
+            if read_expect(io, bytes!("HLO ")) { EHLO(read_line(io).unwrap()) }
             else { Invalid }
         }
         'M' => {
-            if read_expect(io, bytes!("AIL FROM:")) { MAIL_FROM(read_line(io)) }
+            if read_expect(io, bytes!("AIL FROM:")) { MAIL_FROM(read_line(io).unwrap()) }
             else { Invalid }
         }
         'R' => {
-            if read_expect(io, bytes!("CPT TO:")) { RCPT_TO(read_line(io)) }
+            if read_expect(io, bytes!("CPT TO:")) { RCPT_TO(read_line(io).unwrap()) }
             else { Invalid }
         }
         'D' => {
@@ -114,7 +128,7 @@ fn handle_connection(conn: TcpStream) {
                 println!("DATA");
                 io.write("354 End data with <CR><LF>.<CR><LF>\r\n".as_bytes()); io.flush();
                 loop {
-                    let line = read_line(&mut io);
+                    let line = read_line(&mut io).unwrap();
                     println!("Data|{}|", line);
                     if line.as_slice() == "." {
                         println!("Got end");
