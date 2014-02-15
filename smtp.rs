@@ -17,41 +17,12 @@ fn read_ascii(io: &mut BufferedStream<TcpStream>) -> char {
 fn read_line(io: &mut BufferedStream<TcpStream>) -> ~str {
     match io.read_line() {
         Ok(mut line) => {
-            line.pop_char(); // XXX: assert '\r' 
-            line.pop_char(); // XXX: assert '\r' 
+            assert!(line.pop_char() == '\n');
+            assert!(line.pop_char() == '\r');
             line
         }
         _ => fail!("Invalid line")
     }
-}
-
-/*
-fn read_data_end(io: &mut BufferedStream<TcpStream>) -> ~[u8] {
-    let mut buf: ~[u8] = ~[];
-    let ends_with = bytes!("\r\n.\r\n");
-
-    match io.read_byte() {
-        Ok(byte) => {
-           buf.push(byte);
-           if buf.len() >= ends_with.len() {
-               if buf.slice_from(buf.len() - ends_with.len()) == ends_with {
-                   return buf;
-               }
-           }
-        }
-        _ => fail!()
-    }
-}
-*/
-
-enum Command {
-    HELO(~str),
-    EHLO(~str),
-    FROM(~str), // MAIL FROM
-    TO(~str), // RCPT TO
-    DATA,
-    QUIT,
-    Invalid
 }
 
 fn read_expect(io: &mut BufferedStream<TcpStream>, expect: &[u8]) -> bool {
@@ -61,6 +32,16 @@ fn read_expect(io: &mut BufferedStream<TcpStream>, expect: &[u8]) -> bool {
         }
     }
     return true;
+}
+
+enum Command {
+    HELO(~str),
+    EHLO(~str),
+    MAIL_FROM(~str),
+    RCPT_TO(~str),
+    DATA,
+    QUIT,
+    Invalid
 }
 
 fn read_command(io: &mut BufferedStream<TcpStream>) -> Command {
@@ -74,11 +55,11 @@ fn read_command(io: &mut BufferedStream<TcpStream>) -> Command {
             else { Invalid }
         }
         'M' => {
-            if read_expect(io, bytes!("AIL FROM:")) { FROM(read_line(io)) }
+            if read_expect(io, bytes!("AIL FROM:")) { MAIL_FROM(read_line(io)) }
             else { Invalid }
         }
         'R' => {
-            if read_expect(io, bytes!("CPT TO:")) { TO(read_line(io)) }
+            if read_expect(io, bytes!("CPT TO:")) { RCPT_TO(read_line(io)) }
             else { Invalid }
         }
         'D' => {
@@ -121,11 +102,11 @@ fn handle_connection(conn: TcpStream) {
     loop {
         let cmd = read_command(&mut io);
         match cmd {
-            FROM(mailfrom) => {
+            MAIL_FROM(mailfrom) => {
                 println!("FROM: {}", mailfrom);
                 io.write("250 Ok\r\n".as_bytes()); io.flush();
             }
-            TO(mailto) => {
+            RCPT_TO(mailto) => {
                 println!("TO: {}", mailto);
                 io.write("250 Ok\r\n".as_bytes()); io.flush();
             }
@@ -145,7 +126,7 @@ fn handle_connection(conn: TcpStream) {
             QUIT => {
                 println!("QUIT");
                 io.write("221 Bye\r\n".as_bytes()); io.flush();
-                break; // XXX make sure to close the connection
+                break;
             }
             _ => {
                 fail!()
@@ -153,9 +134,9 @@ fn handle_connection(conn: TcpStream) {
         }
     }
 
+    // XXX make sure to close the connection
     debug!("End handling connection");
 }
-
 
 fn main() {
     let addr: SocketAddr = from_str("127.0.0.1:2525").unwrap();
