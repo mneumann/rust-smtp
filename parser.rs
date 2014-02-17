@@ -25,29 +25,84 @@ fn ascii_eq_ignore_case(a: &[u8], b: &[u8]) -> bool {
   }
 }
 
+struct SliceReader<'a> {
+  data: &'a[u8]
+}
+
+impl<'a> SliceReader<'a> {
+
+  fn new(data: &'a[u8]) -> SliceReader<'a> {
+      SliceReader { data: data }
+  }
+
+  fn len(&self) -> uint { self.data.len() }
+  fn is_empty(&self) -> bool { self.len() == 0 }
+  fn data(&self) -> &'a[u8] { self.data }
+
+  /// Remove `n` (but no more than len()) items from the back and return them.
+  fn pop_back(&mut self, n: uint) -> &'a[u8] {
+    if n > self.len() { debug!("pop_back(): n > len"); }
+    let n = std::cmp::min(n, self.len());
+    let (front, back) = self.split_at(self.len() - n);
+    self.data = front;
+    return back;
+  }
+
+  /// Remove `n` (but no more than len()) items from the front and return them. 
+  fn pop_front(&mut self, n: uint) -> &'a[u8] {
+    if n > self.len() { debug!("pop_front(): n > len"); }
+    let n = std::cmp::min(n, self.len());
+
+    let (front, back) = self.split_at(n);
+    self.data = back;
+    return front;
+  }
+
+  fn pop_while(&mut self, cond: |u8| -> bool) -> &'a[u8] {
+    let mut cnt = 0;
+    for &b in self.data.iter() {
+      if cond(b) {
+        cnt += 1;
+      } else {
+        break;
+      }
+    }
+    self.pop_front(cnt)
+  }
+
+  fn split_at(&self, pos: uint) -> (&'a[u8], &'a[u8]) {
+    assert!(pos <= self.data.len());
+    (self.data.slice(0, pos), self.data.slice(pos, self.data.len()))
+  }
+}
+
+
 fn parse_command<'a>(line: &'a[u8]) -> Result<SmtpCommand<'a>, ParseError>  {
+    let mut line = SliceReader::new(line);
+
     if line.len() < 2 {
       return Err(InvalidLineEnding);
     }
 
-    let crlf = line.slice(line.len() - 2, line.len());
+    let crlf = line.pop_back(2);
     if crlf != bytes!("\r\n") {
       return Err(InvalidLineEnding);
     }
 
-    let line = line.initn(2); // drop off line ending
-
-    let cmd = line.slice(0, 4);
+    let cmd = line.pop_front(4);
     if ascii_eq_ignore_case(cmd, bytes!("MAIL")) {
-        if ascii_eq_ignore_case(line.slice(4, 11), bytes!(" FROM:<")) {
-            let addr = line.slice_from(11).init();
-            let rem = line.slice_from(line.len() - 1);
-            if rem == bytes!(">") {
+        if line.pop_while(|b| b == (' ' as u8) ).len() == 0 {
+            return Err(SyntaxError("Invalid MAIL command: Missing SP"));
+        }
+
+        if ascii_eq_ignore_case(line.pop_front(5), bytes!("FROM:")) {
+            let addr = line.pop_while(|b| b != (' ' as u8));
+            if line.is_empty() {
                 // XXX: Verify mail addr
                 Ok(MAIL(std::str::from_utf8(addr).unwrap()))
             }
             else {
-                Err(SyntaxError("Invalid MAIL command: Missing >"))
+                Err(SyntaxError("Invalid MAIL command"))
             }
         }
         else {
@@ -55,7 +110,7 @@ fn parse_command<'a>(line: &'a[u8]) -> Result<SmtpCommand<'a>, ParseError>  {
         }
     }
     else if ascii_eq_ignore_case(cmd, bytes!("DATA")) {
-      if line.slice_from(4).len() == 0 {
+      if line.is_empty() {
           Ok(DATA)
       }
       else {
@@ -98,9 +153,9 @@ fn test_commands() {
   test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\n", Err(InvalidLineEnding));
   test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\n\r", Err(InvalidLineEnding));
 
-  test_parse_command!("MAIL FROM:<mneumann@ntecs.de\r\n", Err(SyntaxError("Invalid MAIL command: Missing >")));
+  test_parse_command!("MAIL FROM:<mneumann@ntecs.de blah\r\n", Err(SyntaxError("Invalid MAIL command")));
                 
-  test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\r\n", Ok(MAIL("mneumann@ntecs.de")));
+  test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\r\n", Ok(MAIL("<mneumann@ntecs.de>")));
 
 
   test_parse_command!("DATA\r\n", Ok(DATA));
