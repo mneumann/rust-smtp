@@ -25,22 +25,22 @@ fn ascii_eq_ignore_case(a: &[u8], b: &[u8]) -> bool {
   }
 }
 
-struct SliceReader<'a> {
-  data: &'a[u8]
+struct SliceScanner<'a, T> {
+  data: &'a[T]
 }
 
-impl<'a> SliceReader<'a> {
+impl<'a, T:Sized+Send> SliceScanner<'a, T> {
 
-  fn new(data: &'a[u8]) -> SliceReader<'a> {
-      SliceReader { data: data }
+  fn new(data: &'a[T]) -> SliceScanner<'a, T> {
+      SliceScanner { data: data }
   }
 
   fn len(&self) -> uint { self.data.len() }
   fn is_empty(&self) -> bool { self.len() == 0 }
-  fn data(&self) -> &'a[u8] { self.data }
+  fn data(&self) -> &'a[T] { self.data }
 
   /// Remove `n` (but no more than len()) items from the back and return them.
-  fn pop_back(&mut self, n: uint) -> &'a[u8] {
+  fn pop_back(&mut self, n: uint) -> &'a[T] {
     if n > self.len() { debug!("pop_back(): n > len"); }
     let n = std::cmp::min(n, self.len());
     let (front, back) = self.split_at(self.len() - n);
@@ -49,7 +49,7 @@ impl<'a> SliceReader<'a> {
   }
 
   /// Remove `n` (but no more than len()) items from the front and return them. 
-  fn pop_front(&mut self, n: uint) -> &'a[u8] {
+  fn pop_front(&mut self, n: uint) -> &'a[T] {
     if n > self.len() { debug!("pop_front(): n > len"); }
     let n = std::cmp::min(n, self.len());
 
@@ -58,19 +58,24 @@ impl<'a> SliceReader<'a> {
     return front;
   }
 
-  fn pop_while(&mut self, cond: |u8| -> bool) -> &'a[u8] {
+  fn count_while(&self, cond: |&T| -> bool) -> uint {
     let mut cnt = 0;
-    for &b in self.data.iter() {
+    for b in self.data.iter() {
       if cond(b) {
         cnt += 1;
       } else {
         break;
       }
     }
+    return cnt
+  }
+
+  fn pop_while(&mut self, cond: |&T| -> bool) -> &'a[T] {
+    let cnt = self.count_while(cond);
     self.pop_front(cnt)
   }
 
-  fn split_at(&self, pos: uint) -> (&'a[u8], &'a[u8]) {
+  fn split_at(&self, pos: uint) -> (&'a[T], &'a[T]) {
     assert!(pos <= self.data.len());
     (self.data.slice(0, pos), self.data.slice(pos, self.data.len()))
   }
@@ -78,11 +83,7 @@ impl<'a> SliceReader<'a> {
 
 
 fn parse_command<'a>(line: &'a[u8]) -> Result<SmtpCommand<'a>, ParseError>  {
-    let mut line = SliceReader::new(line);
-
-    if line.len() < 2 {
-      return Err(InvalidLineEnding);
-    }
+    let mut line = SliceScanner::new(line);
 
     let crlf = line.pop_back(2);
     if crlf != bytes!("\r\n") {
@@ -91,12 +92,12 @@ fn parse_command<'a>(line: &'a[u8]) -> Result<SmtpCommand<'a>, ParseError>  {
 
     let cmd = line.pop_front(4);
     if ascii_eq_ignore_case(cmd, bytes!("MAIL")) {
-        if line.pop_while(|b| b == (' ' as u8) ).len() == 0 {
+        if line.pop_while(|&b| b == (' ' as u8) ).len() == 0 {
             return Err(SyntaxError("Invalid MAIL command: Missing SP"));
         }
 
         if ascii_eq_ignore_case(line.pop_front(5), bytes!("FROM:")) {
-            let addr = line.pop_while(|b| b != (' ' as u8));
+            let addr = line.pop_while(|&b| b != (' ' as u8));
             if line.is_empty() {
                 // XXX: Verify mail addr
                 Ok(MAIL(std::str::from_utf8(addr).unwrap()))
