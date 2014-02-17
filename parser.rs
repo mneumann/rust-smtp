@@ -58,6 +58,15 @@ impl<'a, T:Sized+Send> SliceScanner<'a, T> {
     return front;
   }
 
+  /// Same as pop_front, but does not modify the underlying SliceScanner.
+  fn ref_front(&self, n: uint) -> &'a[T] {
+    if n > self.len() { debug!("ref_front(): n > len"); }
+    let n = std::cmp::min(n, self.len());
+
+    let (front, _) = self.split_at(n);
+    return front;
+  }
+
   fn count_while(&self, cond: |&T| -> bool) -> uint {
     let mut cnt = 0;
     for b in self.data.iter() {
@@ -97,7 +106,19 @@ fn parse_command<'a>(line: &'a[u8]) -> Result<SmtpCommand<'a>, ParseError>  {
         }
 
         if ascii_eq_ignore_case(line.pop_front(5), bytes!("FROM:")) {
-            let addr = line.pop_while(|&b| b != (' ' as u8));
+            let addr =
+            if line.ref_front(1) == bytes!("<") {
+              let _ = line.pop_front(1);
+              let addr = line.pop_while(|&b| b != ('>' as u8));
+              if line.pop_front(1) != bytes!(">") {
+                return Err(SyntaxError("Invalid MAIL command: Missing >"));
+              }
+              addr
+            }
+            else {
+              line.pop_while(|&b| b != (' ' as u8))
+            };
+
             if line.is_empty() {
                 // XXX: Verify mail addr
                 Ok(MAIL(std::str::from_utf8(addr).unwrap()))
@@ -154,9 +175,10 @@ fn test_commands() {
   test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\n", Err(InvalidLineEnding));
   test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\n\r", Err(InvalidLineEnding));
 
-  test_parse_command!("MAIL FROM:<mneumann@ntecs.de blah\r\n", Err(SyntaxError("Invalid MAIL command")));
+  test_parse_command!("MAIL FROM:<mneumann@ntecs.de blah\r\n", Err(SyntaxError("Invalid MAIL command: Missing >")));
                 
-  test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\r\n", Ok(MAIL("<mneumann@ntecs.de>")));
+  test_parse_command!("MAIL FROM:<mneumann@ntecs.de>\r\n", Ok(MAIL("mneumann@ntecs.de")));
+  test_parse_command!("MAIL FROM:mneumann@ntecs.de\r\n", Ok(MAIL("mneumann@ntecs.de")));
 
 
   test_parse_command!("DATA\r\n", Ok(DATA));
