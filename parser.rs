@@ -29,7 +29,7 @@ struct SliceScanner<'a, T> {
   data: &'a[T]
 }
 
-impl<'a, T:Sized+Send> SliceScanner<'a, T> {
+impl<'a, T> SliceScanner<'a, T> {
 
   fn new(data: &'a[T]) -> SliceScanner<'a, T> {
       SliceScanner { data: data }
