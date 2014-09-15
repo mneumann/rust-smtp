@@ -1,4 +1,7 @@
-#[warn(unused_must_use)];
+#![warn(unused_must_use)]
+#![feature(phase)]
+
+#[phase(plugin, link)] extern crate log;
 
 use std::io::{IoResult,IoError,InvalidInput};
 use std::io::net::ip::SocketAddr;
@@ -21,18 +24,18 @@ fn invalid_input(desc: &'static str) -> IoError {
 // RFC 5321 Section 2.3.8. Lines
 static CR: u8 = 0x0D;
 static LF: u8 = 0x0A;
-fn read_line(io: &mut BufferedStream<TcpStream>) -> IoResult<~str> {
-    let mut s = ~"";
+fn read_line(io: &mut BufferedStream<TcpStream>) -> IoResult<String> {
+    let mut s = "".to_string();
 
     loop {
-        match if_ok!(io.read_byte()) {
+        match try!(io.read_byte()) {
             CR   => { break }
             LF   => { return Err(invalid_input("CR expected before LF")) }
             byte => { s.push_char(byte as char); }
         }
     }
 
-    if if_ok!(io.read_byte()) == LF {
+    if try!(io.read_byte()) == LF {
         Ok(s)
     } else {
         Err(invalid_input("LF expected after CR"))
@@ -49,10 +52,10 @@ fn read_expect(io: &mut BufferedStream<TcpStream>, expect: &[u8]) -> bool {
 }
 
 enum Command {
-    HELO(~str),
-    EHLO(~str),
-    MAIL_FROM(~str),
-    RCPT_TO(~str),
+    HELO(String),
+    EHLO(String),
+    MAIL_FROM(String),
+    RCPT_TO(String),
     DATA,
     QUIT,
     Invalid
@@ -61,27 +64,27 @@ enum Command {
 fn read_command(io: &mut BufferedStream<TcpStream>) -> Command {
     match read_ascii(io) {
         'H' => {
-            if read_expect(io, bytes!("ELO ")) { HELO(read_line(io).unwrap()) }
+            if read_expect(io, b"ELO ") { HELO(read_line(io).unwrap()) }
             else { Invalid }
         }
         'E' => {
-            if read_expect(io, bytes!("HLO ")) { EHLO(read_line(io).unwrap()) }
+            if read_expect(io, b"HLO ") { EHLO(read_line(io).unwrap()) }
             else { Invalid }
         }
         'M' => {
-            if read_expect(io, bytes!("AIL FROM:")) { MAIL_FROM(read_line(io).unwrap()) }
+            if read_expect(io, b"AIL FROM:") { MAIL_FROM(read_line(io).unwrap()) }
             else { Invalid }
         }
         'R' => {
-            if read_expect(io, bytes!("CPT TO:")) { RCPT_TO(read_line(io).unwrap()) }
+            if read_expect(io, b"CPT TO:") { RCPT_TO(read_line(io).unwrap()) }
             else { Invalid }
         }
         'D' => {
-            if read_expect(io, bytes!("ATA\r\n")) { DATA }
+            if read_expect(io, b"ATA\r\n") { DATA }
             else { Invalid }
         }
         'Q' => {
-            if read_expect(io, bytes!("UIT\r\n")) { QUIT }
+            if read_expect(io, b"UIT\r\n") { QUIT }
             else { Invalid }
         }
         _ => {
@@ -100,7 +103,7 @@ fn handle_connection(conn: TcpStream) {
     write!(&mut io, "220 {} ESMTP {}\r\n", server_hostname, server_agent);
     io.flush();
 
-    let mut client_hostname = ~"";
+    let mut client_hostname = "".to_string();
 
     match read_command(&mut io) {
         EHLO(h) => client_hostname = h,
@@ -153,9 +156,7 @@ fn handle_connection(conn: TcpStream) {
 }
 
 fn main() {
-    let addr: SocketAddr = from_str("127.0.0.1:2525").unwrap();
-
-    match TcpListener::bind(addr) {
+    match TcpListener::bind("127.0.0.1", 2525) {
         Ok(listener) => {
             match listener.listen() {
                 Ok(ref mut acceptor) => {
