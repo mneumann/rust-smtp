@@ -3,3 +3,6 @@
 name = "rust-smtp"
 version = "0.0.1"
 authors = ["Michael Neumann <mneumann@ntecs.de>"]
+
+[dependencies]
+log = "0.3.6"

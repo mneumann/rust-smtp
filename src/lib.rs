@@ -26,8 +26,8 @@ fn test_ascii_upcase_compare() {
     assert!(ascii_upcase_compare(b"EHLO ", b"EHLO") == false);
 }
 
-#[deriving(PartialEq, Eq)]
-enum SmtpCommand {
+#[derive(PartialEq, Eq)]
+pub enum SmtpCommand {
     Ehlo,
     Helo,
     Mail,
@@ -38,35 +38,35 @@ enum SmtpCommand {
 
 pub fn parse_line(line: &[u8]) -> SmtpCommand {
     if line.len() >= 4 {
-        let cmd = line.slice(0, 4);
+        let cmd = &line[0..4];
 
         if ascii_upcase_compare(cmd, b"EHLO") {
-            Ehlo
+            SmtpCommand::Ehlo
         }
         else if ascii_upcase_compare(cmd, b"HELO") {
-            Helo
+            SmtpCommand::Helo
         }
         else if ascii_upcase_compare(cmd, b"MAIL") {
-            Mail
+            SmtpCommand::Mail
         }
         else if ascii_upcase_compare(cmd, b"RCPT") {
-            Rcpt
+            SmtpCommand::Rcpt
         }
         else if ascii_upcase_compare(cmd, b"DATA") {
-           Data
+           SmtpCommand::Data
         }
         else {
-            Unknown
+           SmtpCommand::Unknown
         }
     }
     else {
-        Unknown
+        SmtpCommand::Unknown
     }
 }
 
 #[test]
 fn test_parse_commands() {
-    assert!(parse_line(b"ehlo mail.ntecs.de\r\n") == Ehlo);
-    assert!(parse_line(b"helo mail.ntecs.de\r\n") == Helo);
-    assert!(parse_line(b"DATA\r\n") == Data);
+    assert!(parse_line(b"ehlo mail.ntecs.de\r\n") == SmtpCommand::Ehlo);
+    assert!(parse_line(b"helo mail.ntecs.de\r\n") ==SmtpCommand:: Helo);
+    assert!(parse_line(b"DATA\r\n") == SmtpCommand::Data);
 }
