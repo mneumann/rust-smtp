@@ -6,6 +6,7 @@ extern crate log;
 use std::io::{Read, Write, Result, Error, ErrorKind};
 use std::net::{TcpListener,TcpStream};
 use std::thread::spawn;
+use log::{LogLevel, LogLevelFilter, LogRecord, LogMetadata};
 
 fn read_ascii_char(io: &mut Read) -> Result<u8> {
     let buf = &mut vec![0; 1];
@@ -40,11 +41,9 @@ fn read_line(io: &mut Read) -> Result<String> {
 fn read_expect(io: &mut Read, expect: &[u8]) -> bool {
     let buf = &mut vec![0; expect.len()];
     if io.read_exact(buf).is_ok() {
-        for &byte in expect.iter() {
-            if let Ok(b) = read_ascii_char(io) {
-                if b != byte {
-                    return false
-                }
+        for (i, &byte) in expect.iter().enumerate() {
+            if buf[i] != byte {
+                return false
             }
         }
         return true;
@@ -179,6 +178,11 @@ fn handle_connection(mut conn: TcpStream) {
 }
 
 fn main() {
+    log::set_logger(|max_log_level| {
+        max_log_level.set(LogLevelFilter::Info);
+        Box::new(SimpleLogger)
+    }).unwrap();
+
     match TcpListener::bind(("127.0.0.1", 2525)) {
         Ok(listener) => {
             for acceptor in listener.incoming() {
@@ -189,5 +193,19 @@ fn main() {
             }
         }
         _ => { panic!() }
+    }
+}
+
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+    fn enabled(&self, metadata: &LogMetadata) -> bool {
+        metadata.level() <= LogLevel::Info
+    }
+
+    fn log(&self, record: &LogRecord) {
+        if self.enabled(record.metadata()) {
+            println!("{} - {}", record.level(), record.args());
+        }
     }
 }
