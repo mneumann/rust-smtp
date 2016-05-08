@@ -1,10 +1,10 @@
 #![warn(unused_must_use)]
 
-#[macro_use] 
+#[macro_use]
 extern crate log;
 
 use std::io::{Read, Write, Result, Error, ErrorKind};
-use std::net::{TcpListener,TcpStream};
+use std::net::{TcpListener, TcpStream};
 use std::thread::spawn;
 use log::{LogLevel, LogLevelFilter, LogRecord, LogMetadata};
 
@@ -25,9 +25,13 @@ fn read_line(io: &mut Read) -> Result<String> {
 
     loop {
         match try!(read_ascii_char(io)) {
-            CR   => { break }
-            LF   => { return Err(Error::new(ErrorKind::InvalidInput, "Expected CR (before LF). Got LF")) }
-            byte => { s.push(byte as char); }
+            CR => break,
+            LF => {
+                return Err(Error::new(ErrorKind::InvalidInput, "Expected CR (before LF). Got LF"))
+            }
+            byte => {
+                s.push(byte as char);
+            }
         }
     }
 
@@ -43,7 +47,7 @@ fn read_expect(io: &mut Read, expect: &[u8]) -> bool {
     if io.read_exact(buf).is_ok() {
         for (i, &byte) in expect.iter().enumerate() {
             if buf[i] != byte {
-                return false
+                return false;
             }
         }
         return true;
@@ -60,38 +64,54 @@ enum Command {
     RCPT_TO(String),
     DATA,
     QUIT,
-    Invalid
+    Invalid,
 }
 
 fn read_command(io: &mut Read) -> Result<Command> {
     match try!(read_ascii_char(io)) as char {
         'H' => {
-            if read_expect(io, b"ELO ") { Ok(Command::HELO(read_line(io).unwrap())) }
-            else { Ok(Command::Invalid) }
+            if read_expect(io, b"ELO ") {
+                Ok(Command::HELO(read_line(io).unwrap()))
+            } else {
+                Ok(Command::Invalid)
+            }
         }
         'E' => {
-            if read_expect(io, b"HLO ") { Ok(Command::EHLO(read_line(io).unwrap())) }
-            else { Ok(Command::Invalid) }
+            if read_expect(io, b"HLO ") {
+                Ok(Command::EHLO(read_line(io).unwrap()))
+            } else {
+                Ok(Command::Invalid)
+            }
         }
         'M' => {
-            if read_expect(io, b"AIL FROM:") { Ok(Command::MAIL_FROM(read_line(io).unwrap())) }
-            else { Ok(Command::Invalid) }
+            if read_expect(io, b"AIL FROM:") {
+                Ok(Command::MAIL_FROM(read_line(io).unwrap()))
+            } else {
+                Ok(Command::Invalid)
+            }
         }
         'R' => {
-            if read_expect(io, b"CPT TO:") { Ok(Command::RCPT_TO(read_line(io).unwrap())) }
-            else { Ok(Command::Invalid) }
+            if read_expect(io, b"CPT TO:") {
+                Ok(Command::RCPT_TO(read_line(io).unwrap()))
+            } else {
+                Ok(Command::Invalid)
+            }
         }
         'D' => {
-            if read_expect(io, b"ATA\r\n") { Ok(Command::DATA) }
-            else { Ok(Command::Invalid) }
+            if read_expect(io, b"ATA\r\n") {
+                Ok(Command::DATA)
+            } else {
+                Ok(Command::Invalid)
+            }
         }
         'Q' => {
-            if read_expect(io, b"UIT\r\n") { Ok(Command::QUIT) }
-            else { Ok(Command::Invalid) }
+            if read_expect(io, b"UIT\r\n") {
+                Ok(Command::QUIT)
+            } else {
+                Ok(Command::Invalid)
+            }
         }
-        _ => {
-            Ok(Command::Invalid)
-        }
+        _ => Ok(Command::Invalid),
     }
 }
 
@@ -104,38 +124,43 @@ fn handle_connection(mut conn: TcpStream) {
     let response_220 = format!("220 {} ESMTP {}\r\n", server_hostname, server_agent);
     if let Err(_) = conn.write_all(&response_220.into_bytes()) {
         error!("Error while writing 220 hostname and agent response");
-        return;        
+        return;
     }
 
     let client_hostname = match read_command(&mut conn) {
         Ok(Command::EHLO(h)) => h,
         Ok(Command::HELO(h)) => h,
-        Ok(unexpected) => {error!("Unexpected command {:?}", unexpected); return}
-        Err(_) => {error!("IO error while reading command. Quitting"); return}
+        Ok(unexpected) => {
+            error!("Unexpected command {:?}", unexpected);
+            return;
+        }
+        Err(_) => {
+            error!("IO error while reading command. Quitting");
+            return;
+        }
     };
 
     println!("Client hostname: {}", client_hostname);
-    
+
     if let Ok(_) = conn.write_all(&format!("250 Hello {}\r\n", client_hostname).into_bytes()) {
         info!("Saying Hello to {}", client_hostname);
-    }
-    else {
+    } else {
         error!("Error while writing Hello. Quitting session.");
         return;
     }
-    
-    let mut bytes_to_write : Vec<u8> = Vec::new();
+
+    let mut bytes_to_write: Vec<u8> = Vec::new();
     loop {
         let cmd = read_command(&mut conn);
         match cmd {
             Ok(Command::MAIL_FROM(mailfrom)) => {
                 println!("FROM: {}", mailfrom);
                 bytes_to_write.extend("250 Ok\r\n".as_bytes().iter())
-            },
+            }
             Ok(Command::RCPT_TO(mailto)) => {
                 println!("TO: {}", mailto);
-                bytes_to_write.extend("250 Ok\r\n".as_bytes().iter()); 
-            },
+                bytes_to_write.extend("250 Ok\r\n".as_bytes().iter());
+            }
             Ok(Command::DATA) => {
                 println!("DATA");
                 bytes_to_write.extend("354 End data with <CR><LF>.<CR><LF>\r\n".as_bytes().iter());
@@ -148,18 +173,14 @@ fn handle_connection(mut conn: TcpStream) {
                     }
                 }
                 bytes_to_write.extend("250 Ok\r\n".as_bytes().iter());
-            },
+            }
             Ok(Command::QUIT) => {
                 println!("QUIT");
-                bytes_to_write.extend("221 Bye\r\n".as_bytes().iter()); 
+                bytes_to_write.extend("221 Bye\r\n".as_bytes().iter());
                 break;
-            },
-            Ok(_) => {
-                panic!("Unknown command {:?}", cmd)
-            },
-            Err(_) => {
-                panic!("IO Error")  
             }
+            Ok(_) => panic!("Unknown command {:?}", cmd),
+            Err(_) => panic!("IO Error"),
         };
 
         if let Ok(_) = conn.write_all(&bytes_to_write) {
@@ -168,12 +189,11 @@ fn handle_connection(mut conn: TcpStream) {
                 error!("Failed to flush bytes to connection. Ending session");
                 return;
             }
-        }
-        else {
+        } else {
             error!("Failed to write bytes. Ending session.");
             return;
         }
-        
+
     }
 }
 
@@ -181,18 +201,21 @@ fn main() {
     log::set_logger(|max_log_level| {
         max_log_level.set(LogLevelFilter::Info);
         Box::new(SimpleLogger)
-    }).unwrap();
+    })
+        .unwrap();
 
     match TcpListener::bind(("127.0.0.1", 2525)) {
         Ok(listener) => {
             for acceptor in listener.incoming() {
                 match acceptor {
-                    Ok(conn) => { spawn(|| handle_connection(conn)); },
-                    _ => error!("Could not accept connection.")
+                    Ok(conn) => {
+                        spawn(|| handle_connection(conn));
+                    }
+                    _ => error!("Could not accept connection."),
                 }
             }
         }
-        _ => { panic!() }
+        _ => panic!(),
     }
 }
 

@@ -15,7 +15,7 @@ fn test_ascii_upcase() {
 
 fn ascii_upcase_compare(str: &[u8], against: &[u8]) -> bool {
     str.len() == against.len() &&
-    str.iter().zip(against.iter()).all(|(&a,&b)| ascii_upcase(a) == ascii_upcase(b))
+    str.iter().zip(against.iter()).all(|(&a, &b)| ascii_upcase(a) == ascii_upcase(b))
 }
 
 #[test]
@@ -33,7 +33,7 @@ pub enum SmtpCommand {
     Mail,
     Rcpt,
     Data,
-    Unknown
+    Unknown,
 }
 
 pub fn parse_line(line: &[u8]) -> SmtpCommand {
@@ -42,24 +42,18 @@ pub fn parse_line(line: &[u8]) -> SmtpCommand {
 
         if ascii_upcase_compare(cmd, b"EHLO") {
             SmtpCommand::Ehlo
-        }
-        else if ascii_upcase_compare(cmd, b"HELO") {
+        } else if ascii_upcase_compare(cmd, b"HELO") {
             SmtpCommand::Helo
-        }
-        else if ascii_upcase_compare(cmd, b"MAIL") {
+        } else if ascii_upcase_compare(cmd, b"MAIL") {
             SmtpCommand::Mail
-        }
-        else if ascii_upcase_compare(cmd, b"RCPT") {
+        } else if ascii_upcase_compare(cmd, b"RCPT") {
             SmtpCommand::Rcpt
+        } else if ascii_upcase_compare(cmd, b"DATA") {
+            SmtpCommand::Data
+        } else {
+            SmtpCommand::Unknown
         }
-        else if ascii_upcase_compare(cmd, b"DATA") {
-           SmtpCommand::Data
-        }
-        else {
-           SmtpCommand::Unknown
-        }
-    }
-    else {
+    } else {
         SmtpCommand::Unknown
     }
 }
@@ -67,6 +61,6 @@ pub fn parse_line(line: &[u8]) -> SmtpCommand {
 #[test]
 fn test_parse_commands() {
     assert!(parse_line(b"ehlo mail.ntecs.de\r\n") == SmtpCommand::Ehlo);
-    assert!(parse_line(b"helo mail.ntecs.de\r\n") ==SmtpCommand:: Helo);
+    assert!(parse_line(b"helo mail.ntecs.de\r\n") == SmtpCommand::Helo);
     assert!(parse_line(b"DATA\r\n") == SmtpCommand::Data);
 }
